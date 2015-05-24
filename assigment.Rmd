@@ -1,13 +1,14 @@
 ---
-title: "Study of predictors of miles per gallon (MPG)"
+title: Study about behaviour of transmission and other predictors of miles runs per
+  gallon in Cars
 author: "Ismay Pérez Sánchez"
-date: "23/05/2015"
+date: "24/05/2015"
 output:
   pdf_document:
     keep_tex: yes
   html_document:
     keep_md: yes
-font_size : 10pts
+font_size: 10pts
 ---
 
 ```{r echo = FALSE, message = FALSE}
@@ -121,7 +122,7 @@ ANOVA test shows that reject $H_{0}$ for the 1st pair of models, thus, **wt** an
 anova(lm(mpg ~ am, mtcars2), steplm, hcorlm)
 ```
 
-But the following analysis will be done with the model resultant from the initial stepwise algorithm because it has the higher sample correlation squared, meaning that explain better the variability in the sample (check that it is included the model discarded for not having **am** only to show that it cover less too).
+But the following analysis will be done with the model resultant from the initial stepwise algorithm because it has the higher sample correlation squared, meaning that it explains better the variability in the sample (check that the model discarded for not having **am** is included only to show that it cover less too).
 
 ```{r}
 data.frame(formula = c(stepFormula, res, step2Formula),
