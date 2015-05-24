@@ -1,0 +1,178 @@
+---
+title: "Study of predictors of miles per gallon (MPG)"
+author: "Ismay Pérez Sánchez"
+date: "23/05/2015"
+output:
+  pdf_document:
+    keep_tex: yes
+  html_document:
+    keep_md: yes
+font_size : 10pts
+---
+
+```{r echo = FALSE, message = FALSE}
+#assign( "last.warning", NULL, envir = baseenv() )
+options( warn = -1 )
+
+library(knitr, warn.conflicts = F)
+opts_chunk$set(echo = FALSE) #, results = "asis")
+knit_hooks$set(inline = as.character)
+
+library(dplyr)
+```
+
+## Executive summary
+
+This study has the purpose of determine the relationship between a set of variables and miles per gallon (MPG). The data used are the `mtcar` dataset available as a package of R, collected on previous studies some decades ago.
+The tasks that will be performed aims to solve the question of which kind of transmission is better for MPG and how different are they. The results indicate that Manual transmission is better than Automatic in about 3 mpg.
+*TODO: Put a real url*  
+For a more detailed document to reproduce this go to <http://github.com/some.github.url.with.the..Rmd.code>
+
+```{r}
+data(mtcars)
+mtcars2 <- mutate(mtcars, am = factor(am, labels = c("Automatic", "Manual")))
+row.names(mtcars2) <- row.names(mtcars)
+```
+
+## Exploratory data analyses
+
+First, we will check how each kind of transmission affect independently to MPG. The `figure 1` (Appendix) constructed as a boxplot to show the distribution of MPG for each level of `am` variable (representing transmission), give us at first glace a very clear tendency of manual transmission to outperform automatic one. 
+In `figure 2` are shown multiples plots in which can be selected **cyl**, **displ**, **hp**, **wt**, **vs**, **am** as the variables that visibly are correlated with MPG.
+
+## Statistical Inference for corroboration of visual comparison of transmission type
+
+Assuming normality in the MPG data by each kind of transmission we can make a T-test (`t.test(mpg ~ am, data=mtcars, alternative="greater", paired=F)` after leveling the manual type) with the following hypothesis:
+
+$H_{0}$: MPG with manual transmission is less than with automatic.  
+$H_{1}$: MPG with manual transmission is greater than with automatic.
+
+```{r}
+aset <- subset(mtcars2$mpg, mtcars2$am == 'Automatic')
+mset <- subset(mtcars2$mpg, mtcars2$am == 'Manual')
+amtest <- t.test(x = mset, y = aset, alternative = "greater", paired = FALSE)
+
+# More clean and concise
+mtcarsTest <- mtcars2
+mtcarsTest$am <- relevel(mtcarsTest$am, ref = "Manual") # forcing Manual - Automatic
+amtest <- t.test(mpg ~ am, data = mtcarsTest, alternative = "greater", paired = F)
+
+#options(digit = 10)    # R output, not inline code
+#knitr::knit_hooks$set(inline = as.character)   # do not restrict the precision to do that 
+# Solving the issue of printing too many significant places of floating point values in inline R code
+pv <- sprintf("%.5f", amtest$p.value)
+```
+
+Obtaining a p-value of `r pv` with which we reject the null hypothesis and accept that manual transmission is better producing more  miles per gallon.
+
+## Regression model
+
+In order to quantify how different is the MPG between the transmissions we will create various models that fit as better as possible the behavior of the outcome, compare them with ANOVA criterion and perform some diagnostics on residuals.
+
+```{r results='hide'}
+steplm <- step( lm(mpg ~ ., mtcars2), trace = 0)
+stepFormula <- as.character( summary(steplm)$call )[2]
+stepR.squared <- sprintf("%.5f", summary(steplm)$adj.r.squared)
+
+corls <- sort( abs(cor(mtcars)[1, -1]) )
+
+dif <- corls
+for (i in length(dif):2) {
+  dif[i] <- dif[i] - dif[i-1]
+}
+dif
+
+concatOp <- function(initVal, valList){
+  last <- valList[length(valList)]
+  res <- initVal
+  for (i in valList) {
+    if (i != last)
+      res = paste(res, i, "+")
+    else
+      res = paste(res, i)
+  }
+  res
+}
+
+corNames = concatOp("", names(corls[6:10]))
+```
+
+The first candidate will be computed with the stepwise procedure (`step` function in R) using default parameter for direction 'both' (i.e: forward selection and backward elimination).
+The resultant model is constructed as `r stepFormula`.  
+
+For the other models, will be computed the correlations of all predictors with the outcome (MPG). Then, turn positive the negatives (because the magnitude is what it is important, the sign only shows the direction), sort them and calculate the differences between consecutive predictors. All the differences are under `0.1` (`10%` increase of correlation between closest predictors) what results in values somewhat spread between `0.005` and `0.09` (an additional analysis could be appropriate, but the space limits my will). The last values -more correlated predictors- concentrate the lowest differences, what makes the upper half of the list (`r (corNames)`) a clear separations to create an initial set for another model, but **am** is not between them, so it does not make sense for our purpose. Instead, we will create another models with all variables more correlated than **am**, including it, and a refined model with `step` function.
+
+```{r results='hide'}
+res <- concatOp("mpg ~ ", names(dif[grep('am', names(dif)):length(dif)]))
+hcorlm <- lm(res, mtcars2)
+hcorFormula <- as.character( summary(hcorlm)$call )[2]
+hcorR.squared <- sprintf("%.5f", summary(hcorlm)$adj.r.squared)
+
+steplm2 <- step( hcorlm, trace = 0)
+step2Formula <- as.character( summary(steplm2)$call )[2]
+step2R.squared <- sprintf("%.5f", summary(steplm2)$adj.r.squared)
+
+
+steplm2 <- lm( paste(summary(steplm)$call[2], "+ disp"), mtcars2 )
+```
+
+The new models are (`r res`) and the refined (`r step2Formula`), this lack of interest because **am** are not in it. 
+ANOVA test shows that reject $H_{0}$ for the 1st pair of models, thus, **wt** and **qsec** indeed improve the accuracy of the model over the basic (`mpg ~ am`). But fail to reject $H_{0}$ in the second, therefore, none of the models has significant difference over the other.
+
+```{r}
+anova(lm(mpg ~ am, mtcars2), steplm, hcorlm)
+```
+
+But the following analysis will be done with the model resultant from the initial stepwise algorithm because it has the higher sample correlation squared, meaning that explain better the variability in the sample (check that it is included the model discarded for not having **am** only to show that it cover less too).
+
+```{r}
+data.frame(formula = c(stepFormula, res, step2Formula),
+           RSquared = c(stepR.squared, hcorR.squared, step2R.squared))
+```
+
+## Residual plots and some diagnostics
+
+In the `figure 3` there are many plots with the redisual analysis. Residual vs Fitted shows independence, Normal Q-Q indicate that the residuals are normally distributed and Scale-Location that variance is constant.
+There are some points (3 in each plot) that are interesting to check. The 3 points with most leverage are found with the `hatvalues()` function.
+
+```{r}
+tail(sort( hatvalues(steplm)  ), 3)
+```
+
+And those with most influence using `dfbetas()`.
+
+```{r}
+tail(sort( dfbetas(steplm)[,4]  ), 3)
+```
+
+Coincidentally are mostly the same points saw at the plots.
+
+# Regression Model interpretation
+
+Given the coefficients of the selected model: 
+```{r}
+steplm$coefficient
+```
+
+Manual transmission improve Automatic transmission in almost 3 miles per gallon.  
+The miles per gallon will increase by 1.2 for every qsec (1/4 mile time).  
+For every ton increase in weight the cars will decrease approximately 4 miles per gallon.  
+
+# Appendix
+
+Figure 1
+
+```{r, fig.with = 5, fig.height = 5}
+boxplot(mpg ~ am, data = mtcars)
+```
+
+Figure 2
+
+```{r , fig.width = 7, fig.height = 7}
+pairs(mtcars)
+```
+
+Figure 3
+
+```{r , fig.height = 7, fig.width = 7}
+par(mfrow = c(2, 2)); plot(steplm)
+```
